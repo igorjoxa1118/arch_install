@@ -114,8 +114,7 @@ partition_disk() {
     
     log_info "\nCreating partitions on $disk..."
     
-    local boot_size_mb=512
-    local swap_size_mb=$(( $(grep MemTotal /proc/meminfo | awk '{print $2}') / 1024 ))  # Equal to RAM size in MB
+    local boot_size_mb=2048
     
     log_info "Creating EFI boot partition (${boot_size_mb}MB)..."
     parted -s "$disk" mkpart primary fat32 1MiB "${boot_size_mb}MiB" || {
@@ -123,13 +122,8 @@ partition_disk() {
     }
     parted -s "$disk" set 1 esp on
     
-    log_info "Creating swap partition (${swap_size_mb}MB)..."
-    parted -s "$disk" mkpart primary linux-swap "${boot_size_mb}MiB" "$((boot_size_mb + swap_size_mb))MiB" || {
-        log_error "Swap partition failed"; exit 1
-    }
-    
     log_info "Creating root partition (remaining space)..."
-    parted -s "$disk" mkpart primary btrfs "$((boot_size_mb + swap_size_mb))MiB" "100%" || {
+    parted -s "$disk" mkpart primary btrfs "${boot_size_mb}MiB" "100%" || {
         log_error "Root partition failed"; exit 1
     }
     
@@ -149,37 +143,40 @@ create_filesystems() {
     log_info "Formatting EFI partition (${disk}1) as FAT32..."
     mkfs.fat -F32 "${disk}1" || { log_error "Failed to format EFI partition"; exit 1; }
     
-    log_info "Formatting swap partition (${disk}2)..."
-    mkswap "${disk}2" || { log_error "Failed to format swap partition"; exit 1; }
-    swapon "${disk}2"
-    
-    log_info "Formatting root partition (${disk}3) as Btrfs..."
-    mkfs.btrfs -f "${disk}3" || { log_error "Failed to format root partition"; exit 1; }
+    log_info "Formatting root partition (${disk}2) as Btrfs..."
+    mkfs.btrfs -f "${disk}2" || { log_error "Failed to format root partition"; exit 1; }
     
     log_info "Creating Btrfs subvolumes..."
-    mount "${disk}3" /mnt
+    mount "${disk}2" /mnt
     
-    # Основные подтомы
+    # Основные подтомы (как в оригинальном скрипте)
     btrfs subvolume create /mnt/@
     btrfs subvolume create /mnt/@home
     btrfs subvolume create /mnt/@snapshots
     
-    # Дополнительные подтомы
+    # Добавленные подтомы
     btrfs subvolume create /mnt/@log
     btrfs subvolume create /mnt/@pkg
-    
-    # Создаем структуру каталогов для монтирования
-    mkdir -p /mnt/{boot,home,.snapshots,var/log,var/cache/pacman/pkg}
     
     umount /mnt
     
     log_info "Mounting all filesystems..."
-    mount -o compress=zstd,subvol=@ "${disk}3" /mnt
+    mount -o compress=zstd,subvol=@ "${disk}2" /mnt
+    mkdir -p /mnt/boot
     mount "${disk}1" /mnt/boot
-    mount -o compress=zstd,subvol=@home "${disk}3" /mnt/home
-    mount -o compress=zstd,subvol=@snapshots "${disk}3" /mnt/.snapshots
-    mount -o compress=zstd,subvol=@log "${disk}3" /mnt/var/log
-    mount -o compress=zstd,subvol=@pkg "${disk}3" /mnt/var/cache/pacman/pkg
+    
+    mkdir -p /mnt/home
+    mount -o compress=zstd,subvol=@home "${disk}2" /mnt/home
+    
+    mkdir -p /mnt/.snapshots
+    mount -o compress=zstd,subvol=@snapshots "${disk}2" /mnt/.snapshots
+    
+    # Монтирование новых подтомов
+    mkdir -p /mnt/var/log
+    mount -o compress=zstd,subvol=@log "${disk}2" /mnt/var/log
+    
+    mkdir -p /mnt/var/cache/pacman/pkg
+    mount -o compress=zstd,subvol=@pkg "${disk}2" /mnt/var/cache/pacman/pkg
     
     log_info "\n${GREEN}Disk preparation complete!${NC}"
     log_info "Created Btrfs subvolumes:"
