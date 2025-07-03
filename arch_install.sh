@@ -149,46 +149,29 @@ create_filesystems() {
     log_info "Creating Btrfs subvolumes..."
     mount "${disk}2" /mnt
     
-    # Основные подтомы
+    # Создаем ТОЛЬКО корневой подтом @ - это ключевое отличие!
     btrfs subvolume create /mnt/@
-    btrfs subvolume create /mnt/@home
     
-    # Дополнительные подтомы
-    btrfs subvolume create /mnt/@snapshots
-    btrfs subvolume create /mnt/@log
-    btrfs subvolume create /mnt/@pkg
-    
+    # Не создаем другие подтомы на этом этапе
     umount /mnt
     
     log_info "Mounting filesystems for archinstall..."
     
-    # Монтируем корневой подтом
+    # Монтируем только корневой раздел
     mount -o compress=zstd,subvol=@ "${disk}2" /mnt
-    
-    # Создаем структуру каталогов
-    mkdir -p /mnt/{boot,home,.snapshots,var/log,var/cache/pacman/pkg}
-    
-    # Монтируем остальные разделы
+    mkdir -p /mnt/boot
     mount "${disk}1" /mnt/boot
-    mount -o compress=zstd,subvol=@home "${disk}2" /mnt/home
-    mount -o compress=zstd,subvol=@snapshots "${disk}2" /mnt/.snapshots
-    mount -o compress=zstd,subvol=@log "${disk}2" /mnt/var/log
-    mount -o compress=zstd,subvol=@pkg "${disk}2" /mnt/var/cache/pacman/pkg
     
     log_info "\n${GREEN}Disk preparation complete!${NC}"
     log_info "Partition layout:"
     log_info "- ${disk}1: /boot (2048MB, FAT32)"
-    log_info "- ${disk}2: Btrfs with subvolumes:"
-    log_info "  - @ mounted at /"
-    log_info "  - @home mounted at /home"
-    log_info "  - @snapshots mounted at /.snapshots"
-    log_info "  - @log mounted at /var/log"
-    log_info "  - @pkg mounted at /var/cache/pacman/pkg"
+    log_info "- ${disk}2: Btrfs with single subvolume @ mounted at /"
     
     log_info "\nNow you can:"
     log_info "1. Run 'archinstall'"
-    log_info "2. Select 'Pre-mounted configuration'"
-    log_info "3. The installer will use existing partitions"
+    log_info "2. Select 'Manual partitioning'"
+    log_info "3. Choose your prepared partitions"
+    log_info "4. archinstall автоматически создаст нужные подтомы (@home и другие)"
 }
 
 # --- MAIN EXECUTION ---
