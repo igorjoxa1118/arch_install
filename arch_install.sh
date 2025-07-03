@@ -114,7 +114,7 @@ partition_disk() {
     
     log_info "\nCreating partitions on $disk..."
     
-    local boot_size_mb=2048
+    local boot_size_mb=512  # 512MB для EFI (достаточно для archinstall)
     
     log_info "Creating EFI boot partition (${boot_size_mb}MB)..."
     parted -s "$disk" mkpart primary fat32 1MiB "${boot_size_mb}MiB" || {
@@ -149,48 +149,51 @@ create_filesystems() {
     log_info "Creating Btrfs subvolumes..."
     mount "${disk}2" /mnt
     
-    # Основные подтомы (как в оригинальном скрипте)
+    # Основные подтомы, которые ожидает archinstall
     btrfs subvolume create /mnt/@
     btrfs subvolume create /mnt/@home
-    btrfs subvolume create /mnt/@snapshots
     
-    # Добавленные подтомы
+    # Дополнительные подтомы
+    btrfs subvolume create /mnt/@snapshots
     btrfs subvolume create /mnt/@log
     btrfs subvolume create /mnt/@pkg
     
     umount /mnt
     
-    log_info "Mounting all filesystems..."
+    log_info "Mounting filesystems in archinstall-compatible way..."
+    
+    # Монтируем корневой подтом в /mnt (как ожидает archinstall)
     mount -o compress=zstd,subvol=@ "${disk}2" /mnt
-    mkdir -p /mnt/boot
+    
+    # Создаем необходимые каталоги
+    mkdir -p /mnt/{boot,home,.snapshots,var/log,var/cache/pacman/pkg}
+    
+    # Монтируем остальные разделы
     mount "${disk}1" /mnt/boot
-    
-    mkdir -p /mnt/home
     mount -o compress=zstd,subvol=@home "${disk}2" /mnt/home
-    
-    mkdir -p /mnt/.snapshots
     mount -o compress=zstd,subvol=@snapshots "${disk}2" /mnt/.snapshots
-    
-    # Монтирование новых подтомов
-    mkdir -p /mnt/var/log
     mount -o compress=zstd,subvol=@log "${disk}2" /mnt/var/log
-    
-    mkdir -p /mnt/var/cache/pacman/pkg
     mount -o compress=zstd,subvol=@pkg "${disk}2" /mnt/var/cache/pacman/pkg
     
     log_info "\n${GREEN}Disk preparation complete!${NC}"
-    log_info "Created Btrfs subvolumes:"
-    log_info "- @ (/)"
-    log_info "- @home (/home)"
-    log_info "- @snapshots (/.snapshots)"
-    log_info "- @log (/var/log)"
-    log_info "- @pkg (/var/cache/pacman/pkg)"
-    log_info "\nYou can now proceed with manual system installation."
+    log_info "Created structure compatible with archinstall:"
+    log_info "- ${disk}1: /boot (FAT32)"
+    log_info "- ${disk}2: Btrfs with subvolumes:"
+    log_info "  - @ mounted at /"
+    log_info "  - @home mounted at /home"
+    log_info "  - @snapshots mounted at /.snapshots"
+    log_info "  - @log mounted at /var/log"
+    log_info "  - @pkg mounted at /var/cache/pacman/pkg"
+    
+    log_info "\nNow you can:"
+    log_info "1. Run 'archinstall'"
+    log_info "2. Select 'Pre-mounted configuration'"
+    log_info "3. Continue installation without disk partitioning"
 }
 
 # --- MAIN EXECUTION ---
 clear
-echo -e "${GREEN}Arch Linux Disk Preparation Script${NC}"
+echo -e "${GREEN}Arch Linux Disk Preparation Script (archinstall compatible)${NC}"
 echo -e "${YELLOW}WARNING: This will erase all data on the selected disk!${NC}\n"
 
 select_disk
