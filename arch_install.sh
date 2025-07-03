@@ -103,7 +103,7 @@ prepare_disk() {
         partprobe "$disk"
         sleep 2
     else
-        log_error "Installation aborted by user"
+        log_error "Operation aborted by user"
         exit 1
     fi
 }
@@ -114,7 +114,8 @@ partition_disk() {
     
     log_info "\nCreating partitions on $disk..."
     
-    local boot_size_mb=2048
+    local boot_size_mb=512
+    local swap_size_mb=$(( $(grep MemTotal /proc/meminfo | awk '{print $2}') / 1024 ))  # Equal to RAM size in MB
     
     log_info "Creating EFI boot partition (${boot_size_mb}MB)..."
     parted -s "$disk" mkpart primary fat32 1MiB "${boot_size_mb}MiB" || {
@@ -122,8 +123,13 @@ partition_disk() {
     }
     parted -s "$disk" set 1 esp on
     
+    log_info "Creating swap partition (${swap_size_mb}MB)..."
+    parted -s "$disk" mkpart primary linux-swap "${boot_size_mb}MiB" "$((boot_size_mb + swap_size_mb))MiB" || {
+        log_error "Swap partition failed"; exit 1
+    }
+    
     log_info "Creating root partition (remaining space)..."
-    parted -s "$disk" mkpart primary btrfs "${boot_size_mb}MiB" "100%" || {
+    parted -s "$disk" mkpart primary btrfs "$((boot_size_mb + swap_size_mb))MiB" "100%" || {
         log_error "Root partition failed"; exit 1
     }
     
@@ -143,24 +149,46 @@ create_filesystems() {
     log_info "Formatting EFI partition (${disk}1) as FAT32..."
     mkfs.fat -F32 "${disk}1" || { log_error "Failed to format EFI partition"; exit 1; }
     
-    log_info "Formatting root partition (${disk}2) as Btrfs..."
-    mkfs.btrfs -f "${disk}2" || { log_error "Failed to format root partition"; exit 1; }
+    log_info "Formatting swap partition (${disk}2)..."
+    mkswap "${disk}2" || { log_error "Failed to format swap partition"; exit 1; }
+    swapon "${disk}2"
+    
+    log_info "Formatting root partition (${disk}3) as Btrfs..."
+    mkfs.btrfs -f "${disk}3" || { log_error "Failed to format root partition"; exit 1; }
     
     log_info "Creating Btrfs subvolumes..."
-    mount "${disk}2" /mnt
+    mount "${disk}3" /mnt
+    
+    # Основные подтомы
     btrfs subvolume create /mnt/@
     btrfs subvolume create /mnt/@home
     btrfs subvolume create /mnt/@snapshots
+    
+    # Дополнительные подтомы
+    btrfs subvolume create /mnt/@log
+    btrfs subvolume create /mnt/@pkg
+    
+    # Создаем структуру каталогов для монтирования
+    mkdir -p /mnt/{boot,home,.snapshots,var/log,var/cache/pacman/pkg}
+    
     umount /mnt
     
+    log_info "Mounting all filesystems..."
+    mount -o compress=zstd,subvol=@ "${disk}3" /mnt
+    mount "${disk}1" /mnt/boot
+    mount -o compress=zstd,subvol=@home "${disk}3" /mnt/home
+    mount -o compress=zstd,subvol=@snapshots "${disk}3" /mnt/.snapshots
+    mount -o compress=zstd,subvol=@log "${disk}3" /mnt/var/log
+    mount -o compress=zstd,subvol=@pkg "${disk}3" /mnt/var/cache/pacman/pkg
+    
     log_info "\n${GREEN}Disk preparation complete!${NC}"
-    log_info "You can now proceed with manual system installation."
-    log_info "Mount points structure:"
-    log_info "- ${disk}1 mounted at /boot (FAT32)"
-    log_info "- ${disk}2 with subvolumes:"
-    log_info "  - @ mounted at /"
-    log_info "  - @home mounted at /home"
-    log_info "  - @snapshots mounted at /.snapshots"
+    log_info "Created Btrfs subvolumes:"
+    log_info "- @ (/)"
+    log_info "- @home (/home)"
+    log_info "- @snapshots (/.snapshots)"
+    log_info "- @log (/var/log)"
+    log_info "- @pkg (/var/cache/pacman/pkg)"
+    log_info "\nYou can now proceed with manual system installation."
 }
 
 # --- MAIN EXECUTION ---
@@ -172,7 +200,7 @@ select_disk
 prepare_disk "$DISK"
 partition_disk "$DISK"
 
-if confirm "Continue with filesystem creation?"; then
+if confirm "Continue with filesystem creation and subvolumes setup?"; then
     create_filesystems "$DISK"
 else
     log_error "Operation aborted by user"
