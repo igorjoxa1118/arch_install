@@ -114,7 +114,7 @@ partition_disk() {
     
     log_info "\nCreating partitions on $disk..."
     
-    local boot_size_mb=512  # 512MB для EFI (достаточно для archinstall)
+    local boot_size_mb=2048  # Фиксированный размер 2048MB как вы указали
     
     log_info "Creating EFI boot partition (${boot_size_mb}MB)..."
     parted -s "$disk" mkpart primary fat32 1MiB "${boot_size_mb}MiB" || {
@@ -149,7 +149,7 @@ create_filesystems() {
     log_info "Creating Btrfs subvolumes..."
     mount "${disk}2" /mnt
     
-    # Основные подтомы, которые ожидает archinstall
+    # Основные подтомы
     btrfs subvolume create /mnt/@
     btrfs subvolume create /mnt/@home
     
@@ -160,12 +160,12 @@ create_filesystems() {
     
     umount /mnt
     
-    log_info "Mounting filesystems in archinstall-compatible way..."
+    log_info "Mounting filesystems for archinstall..."
     
-    # Монтируем корневой подтом в /mnt (как ожидает archinstall)
+    # Монтируем корневой подтом
     mount -o compress=zstd,subvol=@ "${disk}2" /mnt
     
-    # Создаем необходимые каталоги
+    # Создаем структуру каталогов
     mkdir -p /mnt/{boot,home,.snapshots,var/log,var/cache/pacman/pkg}
     
     # Монтируем остальные разделы
@@ -176,8 +176,8 @@ create_filesystems() {
     mount -o compress=zstd,subvol=@pkg "${disk}2" /mnt/var/cache/pacman/pkg
     
     log_info "\n${GREEN}Disk preparation complete!${NC}"
-    log_info "Created structure compatible with archinstall:"
-    log_info "- ${disk}1: /boot (FAT32)"
+    log_info "Partition layout:"
+    log_info "- ${disk}1: /boot (2048MB, FAT32)"
     log_info "- ${disk}2: Btrfs with subvolumes:"
     log_info "  - @ mounted at /"
     log_info "  - @home mounted at /home"
@@ -188,12 +188,12 @@ create_filesystems() {
     log_info "\nNow you can:"
     log_info "1. Run 'archinstall'"
     log_info "2. Select 'Pre-mounted configuration'"
-    log_info "3. Continue installation without disk partitioning"
+    log_info "3. The installer will use existing partitions"
 }
 
 # --- MAIN EXECUTION ---
 clear
-echo -e "${GREEN}Arch Linux Disk Preparation Script (archinstall compatible)${NC}"
+echo -e "${GREEN}Arch Linux Disk Preparation Script${NC}"
 echo -e "${YELLOW}WARNING: This will erase all data on the selected disk!${NC}\n"
 
 select_disk
