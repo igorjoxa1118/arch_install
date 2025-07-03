@@ -149,29 +149,47 @@ create_filesystems() {
     log_info "Creating Btrfs subvolumes..."
     mount "${disk}2" /mnt
     
-    # Создаем ТОЛЬКО корневой подтом @ - это ключевое отличие!
+    # Основные подтомы
     btrfs subvolume create /mnt/@
+    btrfs subvolume create /mnt/@home
+    btrfs subvolume create /mnt/@var
+    btrfs subvolume create /mnt/@log
     
-    # Не создаем другие подтомы на этом этапе
+    # Специальный подтом для снимков с нестандартным путем
+    btrfs subvolume create /mnt/@home_snapshots
+    
     umount /mnt
     
-    log_info "Mounting filesystems for archinstall..."
+    log_info "Mounting filesystems..."
     
-    # Монтируем только корневой раздел
+    # Монтируем корневой подтом
     mount -o compress=zstd,subvol=@ "${disk}2" /mnt
-    mkdir -p /mnt/boot
+    
+    # Создаем структуру каталогов
+    mkdir -p /mnt/{boot,home,var,var/log,home/.snapshots}
+    
+    # Монтируем остальные разделы
     mount "${disk}1" /mnt/boot
+    mount -o compress=zstd,subvol=@home "${disk}2" /mnt/home
+    mount -o compress=zstd,subvol=@var "${disk}2" /mnt/var
+    mount -o compress=zstd,subvol=@log "${disk}2" /mnt/var/log
+    mount -o compress=zstd,subvol=@home_snapshots "${disk}2" /mnt/home/.snapshots
+    
+    # Создаем файл для автоматического определения archinstall
+    touch /mnt/etc/.archinstall_installed
     
     log_info "\n${GREEN}Disk preparation complete!${NC}"
-    log_info "Partition layout:"
-    log_info "- ${disk}1: /boot (2048MB, FAT32)"
-    log_info "- ${disk}2: Btrfs with single subvolume @ mounted at /"
+    log_info "Created Btrfs subvolumes:"
+    log_info "- @ mounted at /"
+    log_info "- @home mounted at /home"
+    log_info "- @var mounted at /var"
+    log_info "- @log mounted at /var/log"
+    log_info "- @home_snapshots mounted at /home/.snapshots"
     
     log_info "\nNow you can:"
     log_info "1. Run 'archinstall'"
-    log_info "2. Select 'Manual partitioning'"
-    log_info "3. Choose your prepared partitions"
-    log_info "4. archinstall автоматически создаст нужные подтомы (@home и другие)"
+    log_info "2. Select 'Pre-mounted configuration'"
+    log_info "3. Installer will use existing partitions and subvolumes"
 }
 
 # --- MAIN EXECUTION ---
